@@ -1,0 +1,226 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  role      String   @default("CUSTOMER") // ADMIN, MANAGER, RENTAL_AGENT, CUSTOMER
+  phone     String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  customer Customer?
+  audits   AuditLog[]
+}
+
+model Customer {
+  id              String    @id @default(cuid())
+  userId          String?   @unique
+  user            User?     @relation(fields: [userId], references: [id])
+  fullName        String
+  email           String    @unique
+  phone           String
+  address         String?
+  nationalId      String?   // National ID or Passport
+  licenseNumber   String    // Driving license number
+  licenseExpiry   DateTime?
+  balance         Float     @default(0) // Outstanding balance in RWF
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  bookings Booking[]
+  rentals  Rental[]
+  payments Payment[]
+}
+
+model VehicleCategory {
+  id          String    @id @default(cuid())
+  name        String    @unique // e.g., SUV, Sedan, Luxury, Van, 4x4
+  description String?
+  vehicles    Vehicle[]
+}
+
+model Vehicle {
+  id               String        @id @default(cuid())
+  registrationNo   String        @unique // Plate e.g. RAE 123A
+  make             String        // Toyota
+  model            String        // RAV4
+  year             Int           // 2023
+  color            String        // Silver
+  transmission     String        // Automatic / Manual
+  fuelType         String        // Petrol / Diesel / Hybrid
+  seats            Int           @default(5)
+  dailyRate        Float         // In RWF e.g. 50,000
+  currentMileage   Int           @default(0) // in km
+  status           String        @default("AVAILABLE") // AVAILABLE, RESERVED, RENTED, MAINTENANCE, UNAVAILABLE
+  categoryId       String
+  category         VehicleCategory @relation(fields: [categoryId], references: [id])
+  
+  insuranceExpiry  DateTime?
+  inspectionExpiry DateTime?
+  lastServiceDate  DateTime?
+  nextServiceMileage Int?
+  nextServiceDate  DateTime?
+  
+  imageUrl         String?
+  description      String?
+  features         String?       // JSON string array of features
+  
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  bookings     Booking[]
+  rentals      Rental[]
+  maintenances Maintenance[]
+}
+
+model Booking {
+  id             String        @id @default(cuid())
+  bookingCode    String        @unique // e.g. BK-2026-001
+  customerId     String
+  customer       Customer      @relation(fields: [customerId], references: [id])
+  vehicleId      String
+  vehicle        Vehicle       @relation(fields: [vehicleId], references: [id])
+  
+  startDate      DateTime
+  endDate        DateTime
+  pickupLocation String        @default("Kigali International Airport")
+  returnLocation String        @default("Kigali Headquarters")
+  
+  dailyRate      Float
+  totalDays      Int
+  baseRentalFee  Float
+  driverFee      Float         @default(0)
+  insuranceFee   Float         @default(0)
+  extraFees      Float         @default(0)
+  totalAmount    Float
+  depositAmount  Float         @default(0)
+  balanceAmount  Float         @default(0)
+  
+  status         String        @default("PENDING") // PENDING, CONFIRMED, ACTIVE, COMPLETED, CANCELLED
+  notes          String?
+  
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  rental   Rental?
+  payments Payment[]
+}
+
+model Rental {
+  id             String    @id @default(cuid())
+  rentalCode     String    @unique // e.g. RA-2026-001
+  bookingId      String?   @unique
+  booking        Booking?  @relation(fields: [bookingId], references: [id])
+  customerId     String
+  customer       Customer  @relation(fields: [customerId], references: [id])
+  vehicleId      String
+  vehicle        Vehicle   @relation(fields: [vehicleId], references: [id])
+  
+  startDate      DateTime
+  endDate        DateTime
+  actualReturnDate DateTime?
+
+  // Pickup Handover Record
+  pickupMileage   Int
+  pickupFuelLevel Int       // Percentage 0-100%
+  pickupCondition String?   // General condition summary
+  pickupDamages   String?   // Existing scratches/scuffs notes
+  customerSignature String? // Data URI or URL
+  agentSignature    String?
+  
+  // Return Record
+  returnMileage   Int?
+  returnFuelLevel Int?      // Percentage 0-100%
+  returnCondition String?
+  newDamages      String?
+  
+  // Financial Settlement
+  baseRentalFee   Float
+  driverFee       Float     @default(0)
+  insuranceFee    Float     @default(0)
+  lateFee         Float     @default(0)
+  damageFee       Float     @default(0)
+  extraMileageFee Float     @default(0)
+  finalTotal      Float
+  depositPaid     Float     @default(0)
+  amountPaid      Float     @default(0)
+  outstandingBalance Float  @default(0)
+  
+  agreementGenerated Boolean @default(true)
+  status          String    @default("ACTIVE") // ACTIVE, COMPLETED, CANCELLED
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  payments Payment[]
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  reference     String        @unique // e.g. PAY-2026-8942
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  bookingId     String?
+  booking       Booking?      @relation(fields: [bookingId], references: [id])
+  rentalId      String?
+  rental        Rental?       @relation(fields: [rentalId], references: [id])
+  
+  amount        Float
+  paymentMethod String        @default("MOBILE_MONEY") // CASH, MOBILE_MONEY, BANK_TRANSFER, CREDIT_CARD
+  provider      String?       // "MTN MoMo", "Airtel Money", "BK Bank Transfer", "Visa/Mastercard"
+  status        String        @default("COMPLETED")    // PENDING, COMPLETED, FAILED, REFUNDED
+  paymentType   String        @default("RENTAL_FEE")   // DEPOSIT, RENTAL_FEE, SETTLEMENT, DAMAGE
+  notes         String?
+  transactionId String?
+  
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+model Maintenance {
+  id              String          @id @default(cuid())
+  vehicleId       String
+  vehicle         Vehicle         @relation(fields: [vehicleId], references: [id])
+  serviceType     String          // OIL_CHANGE, TIRE_REPLACEMENT, BRAKE_SERVICE, ENGINE_SERVICE, INSPECTION, REPAIR
+  description     String
+  serviceCost     Float
+  serviceMileage  Int
+  serviceDate     DateTime
+  nextDueMileage  Int?
+  nextDueDate     DateTime?
+  status          String          @default("COMPLETED") // SCHEDULED, IN_PROGRESS, COMPLETED
+  vendor          String?
+  notes           String?
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  type      String   // MAINTENANCE, BOOKING, PAYMENT, RETURN
+  priority  String   @default("NORMAL") // LOW, NORMAL, HIGH, URGENT
+  isRead    Boolean  @default(false)
+  linkUrl   String?
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+}
